@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import os
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_API_KEY = "AIzaSyBscRNAqx-pGu_93wKDWomk9GG-hdxGIM8"
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-pro-latest")
 
