@@ -2,3 +2,7 @@ streamlit
 google-generativeai
 requests
 pandas
+<<<<<<< Updated upstream
+=======
+sqlite3
+>>>>>>> Stashed changes
