@@ -13,8 +13,8 @@ from mlb_chat import chat_with_gemini
 
 # --- basic config ---
 st.set_page_config(page_title="⚾ MLB AI Chat", page_icon="⚾", layout="centered")
-st.title("⚾ MLB AI Chat")
-st.write("Ask about players, teams, or league leaders. Uses local SQLite cache for speed.")
+st.title("Celeste's Favorite Chat")
+st.write("Celeste, you know you want to ask some questions")
 
 # --- sidebar controls ---
 st.sidebar.header("Settings")
