@@ -35,14 +35,15 @@ st.sidebar.write(DB_PATH)
 if st.session_state.last_updated:
     st.sidebar.markdown(f"**Last refreshed:** {st.session_state.last_updated}")
 
-# --- load data (fast from sqlite) ---
-with st.spinner("Loading cached MLB data..."):
-    if os.path.exists(DB_PATH):
-        mlb_data = load_from_sqlite()
-    else:
-        st.info("No cached data found. Click **Refresh data** (sidebar) to fetch from MLB API.")
-        mlb_data = None
+# --- load data (now from MySQL) ---
+with st.spinner("Loading MLB data from MySQL..."):
+    # load_from_mysql now returns a single merged DataFrame
+    mlb_data = load_from_mysql()
 
+    if mlb_data is None:
+        st.error("Failed to load data from MySQL. Check connection and secrets configuration.")
+    # No complex merging needed here anymore, as it's done in load_from_mysql
+    
 # --- chat UI ---
 st.subheader("What do you want to know?")
 if "history" not in st.session_state:
