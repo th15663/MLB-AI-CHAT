@@ -4,6 +4,9 @@ import os
 import time
 from datetime import datetime
 
+from baseball_data import load_from_mysql
+from mlb_chat import chat_with_gemini # Make sure this points to mlb_chat.py
+
 # --- import your modularized code ---
 # Put your get_mlb_data/load_from_sqlite/save_to_sqlite in baseball_data.py
 # Put your chat_with_gemini(...) in mlb_chat.py
