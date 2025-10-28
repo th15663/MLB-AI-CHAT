@@ -76,9 +76,9 @@ with col2:
 st.markdown("---")
 for role, text in st.session_state.history[::-1]:  # show newest first
     if role == "You":
-        st.markdown(f"**You:** {text}")
+        st.markdown(f"**Q:** {text}")
     else:
-        st.markdown(f"**AI:** {text}")
+        st.markdown(f"**A:** {text}")
     st.write("")
 
 # optional: show sample of the DB
