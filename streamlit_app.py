@@ -8,7 +8,8 @@ from datetime import datetime
 # Put your get_mlb_data/load_from_sqlite/save_to_sqlite in baseball_data.py
 # Put your chat_with_gemini(...) in mlb_chat.py
 # If you didn't split files, you can paste those functions here directly.
-from baseball_data import load_from_sqlite, get_mlb_data, save_to_sqlite, DB_PATH
+
+from baseball_data import load_from_mysql # Keep get_mlb_data if you still use it for API fetching elsewhere
 from mlb_chat import chat_with_gemini
 
 # --- basic config ---
