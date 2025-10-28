@@ -232,4 +232,4 @@ if __name__ == "__main__":
 
             ai_reply = chat_with_gemini(user_input, mlb_data)
             print(f"\nAI: {ai_reply}\n")
-            time.sleep(
+            time.sleep(1)
