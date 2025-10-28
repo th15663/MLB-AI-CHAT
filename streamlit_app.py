@@ -22,18 +22,7 @@ st.sidebar.header("Settings")
 if "last_updated" not in st.session_state:
     st.session_state.last_updated = None
 
-if st.sidebar.button("Refresh data (fetch from MLB API)"):
-    # when pressed, fetch and overwrite cache (danger: slow)
-    with st.spinner("Fetching MLB data (may take several minutes)..."):
-        df = get_mlb_data(resume=False)   # set resume=False if you want a full refresh
-        save_to_sqlite(df)
-        st.session_state.last_updated = datetime.now().isoformat()
-    st.experimental_rerun()
 
-st.sidebar.markdown("**Cache file:**")
-st.sidebar.write(DB_PATH)
-if st.session_state.last_updated:
-    st.sidebar.markdown(f"**Last refreshed:** {st.session_state.last_updated}")
 
 # --- load data (now from MySQL) ---
 with st.spinner("Loading MLB data from MySQL..."):
