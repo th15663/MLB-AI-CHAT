@@ -43,7 +43,7 @@ with st.spinner("Loading cached MLB data..."):
         mlb_data = None
 
 # --- chat UI ---
-st.subheader("What do yoy want to know?")
+st.subheader("What do you want to know?")
 if "history" not in st.session_state:
     st.session_state.history = []
 
