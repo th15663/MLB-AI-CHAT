@@ -43,7 +43,7 @@ with st.spinner("Loading MLB data from MySQL..."):
     if mlb_data is None:
         st.error("Failed to load data from MySQL. Check connection and secrets configuration.")
     # No complex merging needed here anymore, as it's done in load_from_mysql
-    
+
 # --- chat UI ---
 st.subheader("What do you want to know?")
 if "history" not in st.session_state:
@@ -83,9 +83,8 @@ for role, text in st.session_state.history[::-1]:  # show newest first
         st.markdown(f"**A:** {text}")
     st.write("")
 
-# optional: show sample of the DB
-if st.checkbox("Show cached sample data (10 rows)"):
+if st.checkbox("Show sample data (10 rows)"):
     if mlb_data is not None:
-        st.dataframe(mlb_data.head(10))
+        st.dataframe(mlb_data.head(10)) # Should display the merged data
     else:
         st.write("No data loaded.")
