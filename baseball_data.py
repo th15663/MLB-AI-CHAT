@@ -1,231 +1,235 @@
-import sqlite3
-import google.generativeai as genai
-import requests
+# baseball_data.py
+# Removed sqlite3 import
+import streamlit as st # Need streamlit for secrets
+import mysql.connector # Added MySQL connector
 import pandas as pd
 import time
 import json
 import re
 import os
+import google.generativeai as genai # Keep genai if chat_with_gemini uses it directly
 
 # -------------------------------
 # ⚙️ Setup
 # -------------------------------
-DB_PATH = "mlb_data.sqlite"
-MLB_SEASON = 2025
-GEMINI_API_KEY = "AIzaSyBscRNAqx-pGu_93wKDWomk9GG-hdxGIM8"
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-pro-latest")
-
+# Removed DB_PATH
+MLB_SEASON = 2025 # Keep if needed elsewhere
+# Removed GEMINI_API_KEY and model setup (should be in mlb_chat.py)
 
 # -------------------------------
-# ⚾ Fetch MLB Data (with resume & skip)
+# 🔗 MySQL Connection
 # -------------------------------
-def get_mlb_data(resume=True):
-    """
-    Fetch all MLB player hitting + pitching stats and save incrementally to SQLite.
-    Can resume from where it left off and skip already saved players.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    # Create table if it doesn't exist
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS mlb_players (
-        name TEXT,
-        team TEXT,
-        group_type TEXT,
-        avg REAL,
-        era REAL,
-        hits INTEGER,
-        homeRuns INTEGER,
-        rbi INTEGER,
-        strikeOuts INTEGER,
-        wins INTEGER,
-        losses INTEGER,
-        games INTEGER,
-        inningsPitched REAL
-    )
-    """)
-    conn.commit()
-
-    # Get list of teams
-    teams_url = "https://statsapi.mlb.com/api/v1/teams?sportId=1"
-    teams = requests.get(teams_url).json()["teams"]
-
-    # 💡 Step 1: Load already-saved players (not just teams)
-    saved_players = set()
-    if resume:
-        cursor.execute("SELECT DISTINCT name FROM mlb_players")
-        saved_players = set(row[0] for row in cursor.fetchall())
-        print(f"💾 Found {len(saved_players)} saved players already in database.\n")
-
-    for idx, team in enumerate(teams, start=1):
-        team_id = team["id"]
-        team_name = team["name"]
-
-        print(f"⚾ Fetching roster for {team_name} ({idx}/{len(teams)})...")
-        roster_url = f"https://statsapi.mlb.com/api/v1/teams/{team_id}/roster"
-        roster = requests.get(roster_url).json().get("roster", [])
-
-        team_players = []
-
-        for player in roster:
-            pid = player["person"]["id"]
-            name = player["person"]["fullName"]
-
-            # 💡 Step 2: Skip individual players already saved
-            if name in saved_players:
-                continue
-
-            # Get both hitting and pitching stats
-            for group in ["hitting", "pitching"]:
-                stats_url = (
-                    f"https://statsapi.mlb.com/api/v1/people/{pid}/stats?"
-                    f"stats=season&season={MLB_SEASON}&group={group}"
-                )
-                try:
-                    resp = requests.get(stats_url, timeout=10).json()
-                except Exception as e:
-                    print(f"⚠️ Failed to fetch stats for {name}: {e}")
-                    continue
-
-                stats_list = resp.get("stats", [])
-                if not stats_list:
-                    continue
-                splits = stats_list[0].get("splits", [])
-                if not splits:
-                    continue
-
-                stat = splits[0].get("stat", {})
-                team_players.append((
-                    name,
-                    team_name,
-                    group,
-                    stat.get("avg"),
-                    stat.get("era"),
-                    stat.get("hits"),
-                    stat.get("homeRuns"),
-                    stat.get("rbi"),
-                    stat.get("strikeOuts"),
-                    stat.get("wins"),
-                    stat.get("losses"),
-                    stat.get("gamesPlayed"),
-                    stat.get("inningsPitched")
-                ))
-
-        # 💡 Step 3: Only save if new players were found
-        if team_players:
-            cursor.executemany("""
-                INSERT INTO mlb_players (
-                    name, team, group_type, avg, era, hits, homeRuns, rbi, strikeOuts,
-                    wins, losses, games, inningsPitched
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, team_players)
-            conn.commit()
-            print(f"✅ Saved {len(team_players)} new players for {team_name}\n")
-        else:
-            print(f"⏭ No new players for {team_name}, skipped saving.\n")
-
-        time.sleep(0.3)  # avoid rate limits
-
-    conn.close()
-    print("🎉 Finished fetching all MLB data.")
-
-    # Load full data as DataFrame
-    return pd.read_sql("SELECT * FROM mlb_players", sqlite3.connect(DB_PATH))
-
-
-# -------------------------------
-# 💾 SQLite Caching
-# -------------------------------
-def save_to_sqlite(df):
-    """Save full MLB data to local SQLite cache."""
-    with sqlite3.connect(DB_PATH) as conn:
-        df.to_sql("mlb_players", conn, if_exists="replace", index=False)
-    print(f"💾 Saved {len(df)} records to {DB_PATH}.")
-
-
-def load_from_sqlite():
-    """Load cached MLB data."""
-    with sqlite3.connect(DB_PATH) as conn:
-        df = pd.read_sql("SELECT * FROM mlb_players", conn)
-    print(f"📂 Loaded {len(df)} cached player records from {DB_PATH}.")
-    return df
-
-
-# -------------------------------
-# 🧠 Interpret & Answer Queries
-# -------------------------------
-def chat_with_gemini(user_input, mlb_data):
-    """Main chat logic using Gemini and local MLB data."""
+def get_mysql_connection():
+    """Establishes a connection to the MySQL database using secrets."""
     try:
-        # Try to find a player name in the user input
+        conn = mysql.connector.connect(
+            host=st.secrets["mysql"]["host"],
+            port=st.secrets["mysql"]["port"],
+            database=st.secrets["mysql"]["database"],
+            user=st.secrets["mysql"]["user"],
+            password=st.secrets["mysql"]["password"]
+        )
+        return conn
+    except mysql.connector.Error as err:
+        st.error(f"Error connecting to MySQL: {err}") # Use st.error for Streamlit display
+        print(f"Error connecting to MySQL: {err}") # Also print for command-line
+        return None
+    except Exception as e: # Catch if secrets aren't configured yet
+        st.error(f"Could not connect to MySQL. Ensure secrets are configured. Error: {e}")
+        print(f"Could not connect to MySQL. Ensure secrets are configured. Error: {e}")
+        return None
+
+# -------------------------------
+# 💾 Load Data from MySQL
+# -------------------------------
+# @st.cache_data # Optional: Cache for performance in Streamlit
+def load_from_mysql():
+    """Load and merge People, Batting, Pitching data from MySQL."""
+    conn = get_mysql_connection()
+    if conn is None:
+        return None # Return None if connection failed
+
+    print("📂 Loading data from MySQL...")
+    try:
+        # Load People table (only necessary columns)
+        people_df = pd.read_sql("SELECT playerID, nameFirst, nameLast FROM People", conn)
+        print(f"  - Loaded {len(people_df)} records from People.")
+        # Create a 'name' column for easier matching with old code
+        people_df['name'] = people_df['nameFirst'] + ' ' + people_df['nameLast']
+
+        # Load Batting table
+        # Rename ambiguous columns like G, H, R, HR before merge
+        batting_df = pd.read_sql("SELECT * FROM Batting", conn).rename(columns={
+            'G': 'G_bat', 'H': 'H_bat', 'R': 'R_bat', 'HR': 'HR_bat', 'SO': 'SO_bat',
+            'BB': 'BB_bat', 'IBB': 'IBB_bat', 'HBP': 'HBP_bat', 'SH': 'SH_bat',
+            'SF': 'SF_bat', 'GIDP': 'GIDP_bat'
+        })
+        print(f"  - Loaded {len(batting_df)} records from Batting.")
+
+        # Load Pitching table
+        # Rename ambiguous columns
+        pitching_df = pd.read_sql("SELECT * FROM Pitching", conn).rename(columns={
+            'G': 'G_pitch', 'H': 'H_pitch', 'R': 'R_pitch', 'HR': 'HR_pitch', 'SO': 'SO_pitch',
+            'BB': 'BB_pitch', 'IBB': 'IBB_pitch', 'HBP': 'HBP_pitch', 'SH': 'SH_pitch',
+            'SF': 'SF_pitch', 'GIDP': 'GIDP_pitch'
+        })
+        print(f"  - Loaded {len(pitching_df)} records from Pitching.")
+
+        # --- Merge DataFrames ---
+        # 1. Merge Batting with People
+        merged_df = pd.merge(batting_df, people_df[['playerID', 'name']], on='playerID', how='left')
+
+        # 2. Merge Pitching onto the result
+        # Use outer join to keep players who only batted or only pitched in a year/stint
+        # Use common keys: playerID, yearID, stint
+        merged_df = pd.merge(merged_df, pitching_df, on=['playerID', 'yearID', 'stint'], how='outer', suffixes=('_bat', '_pitch'))
+
+        # Add teamID and lgID back if they were dropped due to suffixes (take from _bat or _pitch)
+        merged_df['teamID'] = merged_df['teamID_bat'].fillna(merged_df['teamID_pitch'])
+        merged_df['lgID'] = merged_df['lgID_bat'].fillna(merged_df['lgID_pitch'])
+        # Add player name again if missing due to outer join
+        merged_df['name'] = merged_df['name'].fillna(merged_df['playerID'].map(people_df.set_index('playerID')['name']))
+
+
+        print(f"📊 Merged data has {len(merged_df)} rows.")
+        return merged_df # Return the single, merged DataFrame
+
+    except pd.io.sql.DatabaseError as err:
+        # st.error(f"Error reading data from MySQL: {err}") # Use if running in Streamlit
+        print(f"Error reading data from MySQL: {err}")
+        return None
+    except Exception as e:
+        # st.error(f"An unexpected error occurred during data loading: {e}") # Use if running in Streamlit
+        print(f"An unexpected error occurred during data loading: {e}")
+        return None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+            print("  - MySQL connection closed.")
+
+
+# -------------------------------
+# 🧠 Interpret & Answer Queries (Keep chat function)
+# -------------------------------
+# Make sure GEMINI_API_KEY setup is handled (ideally in mlb_chat.py or main app)
+# If not, add it back here:
+if "GEMINI_API_KEY" not in os.environ:
+     print("Warning: GEMINI_API_KEY environment variable not set.")
+     # Fallback or error handling needed if key isn't set via secrets or env var
+     # For local testing only, you could uncomment:
+     # genai.configure(api_key="YOUR_KEY_HERE_BUT_DO_NOT_COMMIT")
+else:
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+
+# Ensure the model is configured if needed here
+try:
+    model = genai.GenerativeModel("gemini-pro") # Or your preferred model
+except Exception as e:
+    print(f"Error configuring Gemini model: {e}")
+    model = None
+
+def chat_with_gemini(user_input, mlb_data):
+    """Main chat logic using Gemini and merged MLB data."""
+    if model is None:
+        return "⚠️ Error: Gemini model not configured."
+    if mlb_data is None or mlb_data.empty:
+         return "⚠️ Error: MLB data not loaded."
+
+    try:
+        # Try to find a player name in the user input using the 'name' column
         player_matches = [
-            name for name in mlb_data["name"].unique()
-            if name.lower() in user_input.lower()
+            name for name in mlb_data["name"].dropna().unique()
+            if isinstance(name, str) and name.lower() in user_input.lower()
         ]
 
         if player_matches:
             player_name = player_matches[0]
-            player_row = mlb_data[mlb_data["name"] == player_name]
-            if player_row.empty:
-                return f"Sorry, I couldn’t find any stats for {player_name}."
+            # Get all rows for the player (they might have multiple stints/years)
+            player_rows = mlb_data[mlb_data["name"] == player_name].copy()
+            if player_rows.empty:
+                return f"Sorry, I couldn’t find any detailed stats for {player_name} in the loaded data."
 
-            stats_dict = player_row.iloc[0].dropna().to_dict()
+            # Select relevant columns and handle potential missing data (NaN)
+            # Create a summary dictionary - this needs refinement based on expected stats
+            stats_list = []
+            for _, row in player_rows.iterrows():
+                 # Example: create a dict per year/stint
+                 row_dict = row.dropna().to_dict()
+                 # Clean up potential suffix issues if needed, e.g. teamID_bat -> teamID
+                 stats_list.append({k.replace('_bat','').replace('_pitch',''): v for k, v in row_dict.items()})
+
+
             prompt = f"""
             You are a baseball expert assistant.
             The user asked: "{user_input}"
 
-            Here are {player_name}'s 2025 MLB stats:
-            {json.dumps(stats_dict, indent=2)}
+            Here are stats for {player_name} from the database (could be multiple seasons/teams):
+            {json.dumps(stats_list, indent=2, default=str)}
 
-            Use this info to answer clearly and conversationally.
+            Use this info to answer clearly and conversationally. Summarize if multiple rows exist unless asked for specifics. Focus on relevant stats (batting or pitching based on the question).
             """
-            return model.generate_content(prompt).text.strip()
+            response = model.generate_content(prompt)
+            return response.text.strip()
 
         # No specific player — handle league-wide questions
-        subset = mlb_data[["name", "team", "era", "avg", "wins", "strikeOuts", "homeRuns", "rbi"]].dropna(how="all")
-        sample = subset.sample(min(800, len(subset)), random_state=42)
+        # Select a broader range of potentially relevant columns
+        cols_to_sample = ['name', 'yearID', 'teamID', 'lgID', 'G_bat', 'AB', 'H_bat', 'HR_bat', 'RBI', 'SB', 'CS', 'BB_bat', 'SO_bat',
+                          'W', 'L', 'ERA', 'G_pitch', 'SV', 'IPOuts', 'H_pitch', 'ER', 'HR_pitch', 'BB_pitch', 'SO_pitch']
+        # Filter columns that actually exist in the merged dataframe
+        existing_cols = [col for col in cols_to_sample if col in mlb_data.columns]
+        subset = mlb_data[existing_cols].dropna(how="all")
+
+        if subset.empty:
+            return "Could not find relevant league-wide data to sample."
+
+        # Sample data, ensure sample size isn't larger than available data
+        sample_size = min(50, len(subset)) # Reduced sample size for prompt
+        sample = subset.sample(n=sample_size, random_state=42)
         data_json = sample.to_dict(orient="records")
 
         prompt = f"""
         You are a professional baseball analytics assistant.
         The user asked: "{user_input}"
 
-        Here’s MLB 2025 player data (sampled from {len(subset)} players):
-        {json.dumps(data_json[:200], indent=2)}
+        Here’s a sample of MLB player data from the database (stats from various years):
+        {json.dumps(data_json, indent=2, default=str)}
 
-        Answer based on this data — clearly identify leaders, top players, or trends if asked.
-        Be specific but concise.
+        Answer based ONLY on this provided sample data. Identify leaders, top players, or trends if asked within the sample.
+        Be specific but concise. State that the answer is based on a sample.
         """
-        return model.generate_content(prompt).text.strip()
+        response = model.generate_content(prompt)
+        return response.text.strip()
 
     except Exception as e:
+        print(f"Error during Gemini generation: {e}") # Print error for debugging
+        # st.error(f"⚠️ Error interpreting query: {e}") # Use if running in Streamlit
         return f"⚠️ Error interpreting query: {e}"
 
 
 # -------------------------------
-# 💬 Chat Loop
+# 💬 Chat Loop (for command-line testing)
 # -------------------------------
 if __name__ == "__main__":
-    print("⚾ MLB AI Baseball Chatbot")
-    print("🔹 Type your question (e.g. 'How many home runs does Shohei Ohtani have?')")
+    print("⚾ MLB AI Baseball Chatbot (MySQL Version)")
+    print("🔹 Type your question (e.g. 'How many home runs did Shohei Ohtani have?')")
     print("🔹 Type 'quit' to exit.\n")
 
-    # Load or fetch data
-    if os.path.exists(DB_PATH):
-        mlb_data = load_from_sqlite()
-    else:
-        mlb_data = get_mlb_data()
-        save_to_sqlite(mlb_data)
+    # Load data directly from MySQL when script runs
+    mlb_data = load_from_mysql()
 
-    # Chat
-    while True:
-        user_input = input("You: ").strip()
-        if user_input.lower() in ["quit", "exit"]:
-            print("👋 Goodbye!")
-            break
-        ai_reply = chat_with_gemini(user_input, mlb_data)
-        print(f"\nAI: {ai_reply}\n")
-        time.sleep(1)
+    if mlb_data is None:
+        print("❌ Failed to load data from MySQL. Exiting.")
+    else:
+        print(f"✅ Data loaded successfully ({len(mlb_data)} rows). Ready for questions.")
+        # Chat loop
+        while True:
+            user_input = input("You: ").strip()
+            if user_input.lower() in ["quit", "exit"]:
+                print("👋 Goodbye!")
+                break
+            if not user_input:
+                continue
+
+            ai_reply = chat_with_gemini(user_input, mlb_data)
+            print(f"\nAI: {ai_reply}\n")
+            time.sleep(
