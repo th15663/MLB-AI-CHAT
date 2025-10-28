@@ -43,11 +43,11 @@ with st.spinner("Loading cached MLB data..."):
         mlb_data = None
 
 # --- chat UI ---
-st.subheader("Chat")
+st.subheader("What do yoy want to know?")
 if "history" not in st.session_state:
     st.session_state.history = []
 
-user_input = st.text_input("Ask a question (e.g. 'Shohei Ohtani BA and ERA')", key="user_input")
+user_input = st.text_input("Ask a question")
 
 col1, col2 = st.columns([1, 1])
 with col1:
