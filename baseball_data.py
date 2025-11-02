@@ -21,20 +21,30 @@ MLB_SEASON = 2025 # Keep if needed elsewhere
 # -------------------------------
 def get_mysql_connection():
     """Establishes a connection to the MySQL database using secrets."""
+
+    # Define the path to your CA certificate
+    # This assumes ca.pem is in the same directory as your script
+    ssl_ca_path = "ca.pem" 
+
     try:
         conn = mysql.connector.connect(
             host=st.secrets["mysql"]["host"],
             port=st.secrets["mysql"]["port"],
             database=st.secrets["mysql"]["database"],
             user=st.secrets["mysql"]["user"],
-            password=st.secrets["mysql"]["password"]
+            password=st.secrets["mysql"]["password"],
+
+            # --- Add these SSL arguments ---
+            ssl_verify_cert=True,
+            ssl_ca=ssl_ca_path
+            # --------------------------------
         )
         return conn
     except mysql.connector.Error as err:
-        st.error(f"Error connecting to MySQL: {err}") # Use st.error for Streamlit display
-        print(f"Error connecting to MySQL: {err}") # Also print for command-line
+        st.error(f"Error connecting to MySQL: {err}") 
+        print(f"Error connecting to MySQL: {err}") 
         return None
-    except Exception as e: # Catch if secrets aren't configured yet
+    except Exception as e: 
         st.error(f"Could not connect to MySQL. Ensure secrets are configured. Error: {e}")
         print(f"Could not connect to MySQL. Ensure secrets are configured. Error: {e}")
         return None
