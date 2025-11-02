@@ -53,6 +53,8 @@ def get_mysql_connection():
 # 💾 Load Data from MySQL
 # -------------------------------
 # @st.cache_data # Optional: Cache for performance in Streamlit
+# baseball_data.py
+
 def load_from_mysql():
     """Load and merge People, Batting, Pitching data from MySQL."""
     conn = get_mysql_connection()
@@ -62,14 +64,14 @@ def load_from_mysql():
     print("📂 Loading data from MySQL...")
     try:
         # Load People table (only necessary columns)
-        people_df = pd.read_sql("SELECT playerID, nameFirst, nameLast FROM People", conn)
+        people_df = pd.read_sql("SELECT playerID, nameFirst, nameLast FROM people", conn) # <--- CHANGE 1
         print(f"  - Loaded {len(people_df)} records from People.")
         # Create a 'name' column for easier matching with old code
         people_df['name'] = people_df['nameFirst'] + ' ' + people_df['nameLast']
 
         # Load Batting table
         # Rename ambiguous columns like G, H, R, HR before merge
-        batting_df = pd.read_sql("SELECT * FROM Batting", conn).rename(columns={
+        batting_df = pd.read_sql("SELECT * FROM batting", conn).rename(columns={   # <--- CHANGE 2
             'G': 'G_bat', 'H': 'H_bat', 'R': 'R_bat', 'HR': 'HR_bat', 'SO': 'SO_bat',
             'BB': 'BB_bat', 'IBB': 'IBB_bat', 'HBP': 'HBP_bat', 'SH': 'SH_bat',
             'SF': 'SF_bat', 'GIDP': 'GIDP_bat'
@@ -78,12 +80,14 @@ def load_from_mysql():
 
         # Load Pitching table
         # Rename ambiguous columns
-        pitching_df = pd.read_sql("SELECT * FROM Pitching", conn).rename(columns={
+        pitching_df = pd.read_sql("SELECT * FROM pitching", conn).rename(columns={ # <--- CHANGE 3
             'G': 'G_pitch', 'H': 'H_pitch', 'R': 'R_pitch', 'HR': 'HR_pitch', 'SO': 'SO_pitch',
             'BB': 'BB_pitch', 'IBB': 'IBB_pitch', 'HBP': 'HBP_pitch', 'SH': 'SH_pitch',
             'SF': 'SF_pitch', 'GIDP': 'GIDP_pitch'
         })
         print(f"  - Loaded {len(pitching_df)} records from Pitching.")
+
+        # ... (rest of the function is fine) ...
 
         # --- Merge DataFrames ---
         # 1. Merge Batting with People
