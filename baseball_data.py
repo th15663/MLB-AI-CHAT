@@ -1,9 +1,11 @@
+import streamlit as st  # <--- THIS IS THE FIX
 import pandas as pd
 import mysql.connector
 from mysql.connector import Error
 
 # --- Aiven/MySQL Connection Details ---
 # (Pulls from Streamlit secrets)
+# Now it knows what 'st' is
 DB_HOST = st.secrets.get("DB_HOST")
 DB_USER = st.secrets.get("DB_USER")
 DB_PASSWORD = st.secrets.get("DB_PASSWORD")
@@ -23,6 +25,7 @@ def create_mysql_connection():
             database=DB_NAME
         )
     except Error as e:
+        # Use st.error to show the error in the app if connection fails
         print(f"Error connecting to MySQL database: {e}")
     return conn
 
@@ -46,7 +49,7 @@ def list_tables_mysql():
             conn.close()
 
 # --- NEW: Function to get the entire database schema ---
-@st.cache_data(ttl=3600)  # Cache the schema for 1 hour
+@st.cache_data(ttl=3600)  # This decorator also needs 'st'
 def get_database_schema():
     """
     Fetches the schema (table and column names) for all tables.
@@ -92,7 +95,9 @@ def run_sql_query(query):
         return pd.DataFrame(), "Error: Only SELECT queries are allowed."
         
     try:
-        df = pd.read_sql_query(query, conn)
+        # Use connection string for pandas
+        connection_string = f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        df = pd.read_sql_query(query, connection_string)
         return df, None
     except Exception as e:
         return pd.DataFrame(), f"Error running query: {e}"
