@@ -1,112 +1,92 @@
 import streamlit as st
 import pandas as pd
-from baseball_data import get_mlb_data, list_tables_mysql, load_from_mysql
-from mlb_chat import get_gemini_response
+from baseball_data import get_database_schema, run_sql_query
+from mlb_chat import configure_gemini, get_gemini_response, extract_sql_query
 
 # --- Page Configuration ---
-st.set_page_config(page_title="MLB Player Stats", layout="wide")
-st.title("⚾ MLB Player Stats Dashboard")
+st.set_page_config(page_title="MLB AI Analyst", layout="wide")
+st.title("⚾ MLB AI Analyst")
+st.subheader("Ask me anything about the Lahman Baseball Database!")
 
-# --- Get API Key ---
-api_key = st.secrets.get("BALLSTATZ_API_KEY")
-if not api_key:
-    st.error("BALLSTATZ_API_KEY not found in Streamlit secrets.")
+# --- Configure API ---
+configure_gemini()
+
+# --- 1. Get Database Schema ---
+with st.spinner("Loading database schema..."):
+    db_schema = get_database_schema()
+
+if "Error" in db_schema:
+    st.error(db_schema)
     st.stop()
 
-# --- NEW: Sidebar for Table Management ---
-st.sidebar.title("Database Management")
+# Show schema in an expander for debugging/info
+with st.expander("View Database Schema"):
+    st.code(db_schema)
 
-# Button to refresh API data
-if st.sidebar.button("Force Refresh Player Data from API"):
-    with st.spinner("Fetching new data from Ballstatz API..."):
-        get_mlb_data(api_key, force_refresh=True)
-    st.sidebar.success("Player data has been refreshed!")
+# --- 2. Chat Interface ---
+user_query = st.text_input("Your question:", placeholder="e.g., Who had the most home runs in 1998?")
 
-# NEW: Show all tables in the database
-st.sidebar.header("Database Tables")
-with st.spinner("Loading database tables..."):
-    all_tables = list_tables_mysql()
+if st.button("Get Answer"):
+    if user_query:
+        with st.spinner("AI is thinking... (Step 1: Generating SQL)"):
+            
+            # --- 3. First AI Call: Generate SQL ---
+            sql_prompt = f"""
+            You are an expert MySQL data analyst. Based on the database schema below,
+            write a single, valid MySQL query to answer the user's question.
+            Only return the SQL query, wrapped in ```sql ... ```.
 
-if not all_tables:
-    st.sidebar.error("Could not connect to or read tables from the database.")
-    st.stop()
+            Schema:
+            {db_schema}
 
-st.sidebar.write("Found the following tables:")
-st.sidebar.dataframe(all_tables, use_container_width=True)
+            Question:
+            {user_query}
+            """
+            
+            sql_response = get_gemini_response(sql_prompt)
+            sql_query = extract_sql_query(sql_response)
+            
+            if not sql_query:
+                st.error("The AI could not generate a valid SQL query for that question.")
+                st.write("AI Response:", sql_response)
+                st.stop()
+                
+            st.code(sql_query, language="sql") # Show the generated SQL
 
-# NEW: Dropdown to select which table to view
-st.sidebar.header("View Table Data")
-selected_table = st.sidebar.selectbox(
-    "Select a table to display:",
-    options=all_tables,
-    # Set default to mlb_players if it exists, otherwise first table
-    index=all_tables.index("mlb_players") if "mlb_players" in all_tables else 0
-)
+        with st.spinner("Running query on database... (Step 2: Getting Data)"):
+            
+            # --- 4. Run the SQL Query ---
+            query_data, error = run_sql_query(sql_query)
+            
+            if error:
+                st.error(f"Database error: {error}")
+                st.stop()
+                
+            if query_data.empty:
+                st.warning("The query ran successfully, but returned no data.")
+                st.stop()
 
-# --- Main Page Content ---
+        with st.spinner("AI is thinking... (Step 3: Generating Answer)"):
+            
+            # --- 5. Second AI Call: Generate Natural Language Answer ---
+            answer_prompt = f"""
+            You are a helpful MLB data analyst.
+            Based on the user's question and the data returned from the database,
+            provide a clear, natural language answer.
 
-# Load the data from the user-selected table
-with st.spinner(f"Loading data from table '{selected_table}'..."):
-    df = load_from_mysql(selected_table)
+            User Question:
+            {user_query}
 
-if df.empty:
-    st.warning(f"No data found in table '{selected_table}' or table does not exist.")
-    st.stop()
-
-st.header(f"Displaying Data for: {selected_table}")
-st.dataframe(df, use_container_width=True)
-
-# --- Original Chatbot and Filtering Logic ---
-# (This logic is tied to the 'mlb_players' table structure)
-
-if selected_table == "mlb_players":
-    st.header("Analyze Player Data")
-    
-    # Filtering (from your original file)
-    teams = sorted(df['team'].unique())
-    selected_team = st.selectbox("Filter by Team", ["All"] + teams)
-    
-    if selected_team != "All":
-        df_filtered = df[df['team'] == selected_team]
+            Data (in CSV format):
+            {query_data.to_csv(index=False)}
+            """
+            
+            final_answer = get_gemini_response(answer_prompt)
+            st.markdown(final_answer)
+            
+            # Optionally show the data table
+            with st.expander("View Raw Data"):
+                st.dataframe(query_data)
+                
     else:
-        df_filtered = df
-        
-    # Group type selection
-    group_type = st.radio("Select Stats Type", ["hitting", "pitching"], index=0)
-    
-    if group_type == "hitting":
-        stats_cols = ['name', 'team', 'avg', 'homeRuns', 'rbi', 'hits', 'games']
-        df_display = df_filtered[df_filtered['group_type'] == 'hitting'][stats_cols]
-        st.subheader(f"{selected_team} Hitting Stats")
-    else:
-        stats_cols = ['name', 'team', 'era', 'wins', 'losses', 'strikeOuts', 'inningsPitched', 'games']
-        df_display = df_filtered[df_filtered['group_type'] == 'pitching'][stats_cols]
-        st.subheader(f"{selected_team} Pitching Stats")
-        
-    st.dataframe(df_display, use_container_width=True)
-
-    # Gemini Chatbot (from your original file)
-    st.header("Chat with Your Data")
-    user_query = st.text_input("Ask a question about the player data:")
-    
-    if st.button("Get Answer"):
-        if user_query:
-            with st.spinner("Gemini is thinking..."):
-                # Convert the relevant dataframe to CSV string for context
-                csv_data = df_display.to_csv(index=False)
-                prompt = f"""
-                You are an expert MLB data analyst. Based on the following data in CSV format,
-                answer the user's question.
-
-                Data:
-                {csv_data}
-
-                Question:
-                {user_query}
-                """
-                response = get_gemini_response(prompt)
-                st.markdown(response)
-        else:
-            st.warning("Please enter a question.")
-else:
-    st.info(f"Analysis and Chat features are configured for the 'mlb_players' table. You are currently viewing '{selected_table}'.")
+        st.warning("Please enter a question.")

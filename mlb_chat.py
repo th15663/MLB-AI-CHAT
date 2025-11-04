@@ -1,42 +1,40 @@
+import streamlit as st
 import google.generativeai as genai
-import os
-import streamlit as st # Import streamlit to access secrets
+import re
 
+# --- Configure Gemini API ---
+def configure_gemini():
+    """Configures the Gemini API with the key from Streamlit secrets."""
+    gemini_api_key = st.secrets.get("GEMINI_API_KEY")
+    if not gemini_api_key:
+        st.error("GEMINI_API_KEY not found in Streamlit secrets.")
+        st.stop()
+    genai.configure(api_key=gemini_api_key)
+
+# --- Get Gemini Response ---
 def get_gemini_response(prompt):
     """
-    Initializes the Gemini model and gets a response for a given prompt.
+    Sends a prompt to the Gemini model and returns the text response.
     """
-    model = None # Initialize model as None
     try:
-        # Prioritize Streamlit secrets if available
-        if "GEMINI_API_KEY" in st.secrets:
-            api_key = st.secrets["GEMINI_API_KEY"]
-        else:
-            # Fallback to environment variable
-            api_key = os.environ.get("GEMINI_API_KEY")
-
-        if not api_key:
-            st.error("Missing Gemini API Key in Streamlit secrets or environment variables!")
-            return "⚠️ Error: Gemini API Key not configured."
-        
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-pro") # Or your preferred model
-    
-    except Exception as e:
-        st.error(f"Error configuring Gemini: {e}")
-        return f"⚠️ Error: Could not configure Gemini model. {e}"
-
-    # Generate the content
-    try:
+        model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(prompt)
-        if response and response.parts:
-             return response.text.strip()
-        else:
-             # Handle cases where the model might return an empty response or safety block
-             print(f"Gemini response issue. Prompt: {prompt}, Response: {response}")
-             return "Sorry, I couldn't generate a response for that."
-             
+        return response.text
     except Exception as e:
-        print(f"Error during Gemini generation: {e}") # Print error for debugging
-        st.error(f"⚠️ Error interpreting query: {e}") # Show error in Streamlit
-        return f"⚠️ Error interpreting query: {e}"
+        return f"Error communicating with Gemini: {e}"
+
+# --- Helper to extract SQL from AI response ---
+def extract_sql_query(text):
+    """
+    Extracts a SQL query from a markdown code block.
+    """
+    match = re.search(r'```sql\n(.*?)\n```', text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    
+    # Fallback for simple query string
+    match = re.search(r'SELECT\s.*?;', text, re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(0).strip()
+        
+    return None
