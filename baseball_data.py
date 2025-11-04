@@ -1,103 +1,193 @@
-import streamlit as st
-import mysql.connector
 import pandas as pd
+import requests
+import mysql.connector
+from mysql.connector import Error
+from sqlalchemy import create_engine
+import os
+import streamlit as st # <-- IMPORT STREAMLIT
 
-# Removed DB_PATH, it's not needed for MySQL
-MLB_SEASON = 2025 # Keep if needed elsewhere
+# --- NEW: Aiven/MySQL Connection Details from Streamlit Secrets ---
+try:
+    DB_HOST = st.secrets["DB_HOST"]
+    DB_USER = st.secrets["DB_USER"]
+    DB_PASSWORD = st.secrets["DB_PASSWORD"]
+    DB_PORT = st.secrets["DB_PORT"]
+    DB_NAME = st.secrets["DB_NAME"]
+except KeyError:
+    st.error("Database secrets (DB_HOST, DB_USER, etc.) not found in Streamlit secrets.")
+    st.stop()
+except Exception:
+    # This handles the case where the app is run locally without secrets
+    # You could fall back to os.environ.get() here if you wanted
+    print("Streamlit secrets not found. Are you running locally?")
+    st.stop()
 
-#
-# MySQL Connection
-#
-def get_mysql_connection():
-    """Establishes a connection to the MySQL database using secrets."""
-    
-    # Define the path to your CA certificate
-    # This assumes ca.pem is in the same directory as your script
-    ssl_ca_path = "ca.pem" 
-    
+
+# --- Helper function to create a MySQL connection ---
+def create_mysql_connection():
+    """Creates and returns a MySQL connection object."""
+    conn = None
     try:
         conn = mysql.connector.connect(
-            host=st.secrets["mysql"]["host"],
-            port=st.secrets["mysql"]["port"],
-            database=st.secrets["mysql"]["database"],
-            user=st.secrets["mysql"]["user"],
-            password=st.secrets["mysql"]["password"],
-            
-            # --- Add these SSL arguments ---
-            ssl_verify_cert=True,
-            ssl_ca=ssl_ca_path
-            # --------------------------------
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            port=DB_PORT,
+            database=DB_NAME
         )
-        return conn
-    except mysql.connector.Error as err:
-        st.error(f"Error connecting to MySQL: {err}") 
-        print(f"Error connecting to MySQL: {err}") 
-        return None
-    except Exception as e: 
-        st.error(f"Could not connect to MySQL. Ensure secrets are configured. Error: {e}")
-        print(f"Could not connect to MySQL. Ensure secrets are configured. Error: {e}")
-        return None
+    except Error as e:
+        print(f"Error connecting to MySQL database: {e}")
+        st.error(f"Error connecting to MySQL database: {e}") # Show in app
+    return conn
 
-#
-# Load Data From MySQL
-#
-@st.cache_data(ttl=3600)
-def load_from_mysql():
-    """Load and merge People, Batting, Pitching data from MySQL."""
-    conn = get_mysql_connection()
-    if conn is None:
-        return None # Return None if connection failed
-
-    print("📂 Loading data from MySQL...")
+# --- NEW: Helper function to create a SQLAlchemy engine ---
+def create_mysql_engine():
+    """Creates and returns a SQLAlchemy engine for pandas."""
     try:
-        # Load People table (only necessary columns)
-        # --- FIX 1: 'People' changed to 'people' ---
-        people_df = pd.read_sql("SELECT playerID, nameFirst, nameLast FROM people", conn)
-        print(f"  - Loaded {len(people_df)} records from people.")
-        # Create a 'name' column for easier matching with old code
-        people_df['name'] = people_df['nameFirst'] + ' ' + people_df['nameLast']
-
-        # Load Batting table
-        # Rename ambiguous columns like G, H, R, HR before merge
-        # --- FIX 2: 'Batting' changed to 'batting' ---
-        batting_df = pd.read_sql("SELECT * FROM batting", conn).rename(columns={
-            'G': 'G_bat', 'H': 'H_bat', 'R': 'R_bat', 'HR': 'HR_bat', 'SO': 'SO_bat',
-            'BB': 'BB_bat', 'IBB': 'IBB_bat', 'HBP': 'HBP_bat', 'SH': 'SH_bat',
-            'SF': 'SF_bat', 'GIDP': 'GIDP_bat'
-        })
-        print(f"  - Loaded {len(batting_df)} records from batting.")
-
-        # Load Pitching table
-        # Rename ambiguous columns
-        # --- FIX 3: 'Pitching' changed to 'pitching' ---
-        pitching_df = pd.read_sql("SELECT * FROM pitching", conn).rename(columns={
-            'G': 'G_pitch', 'H': 'H_pitch', 'R': 'R_pitch', 'HR': 'HR_pitch', 'SO': 'SO_pitch',
-            'BB': 'BB_pitch', 'IBB': 'IBB_pitch', 'HBP': 'HBP_pitch', 'SH': 'SH_pitch',
-            'SF': 'SF_pitch', 'GIDP': 'GIDP_pitch'
-        })
-        print(f"  - Loaded {len(pitching_df)} records from pitching.")
-
-        # Close the connection
-        conn.close()
-
-        # Merge dataframes: (People + Batting) + Pitching
-        # Merge People with Batting
-        merged_df = pd.merge(people_df, batting_df, on='playerID', how='outer')
-        
-        # Merge the result with Pitching
-        # We need to handle playerID/yearID/stint duplicates. 
-        # A simple outer merge is fine if we aggregate stats later.
-        final_df = pd.merge(merged_df, pitching_df, on=['playerID', 'yearID', 'stint', 'teamID', 'lgID'], how='outer')
-
-        # Drop the now-redundant nameFirst, nameLast
-        final_df.drop(columns=['nameFirst', 'nameLast'], inplace=True)
-        
-        print(f"✅ Data loaded and merged successfully. Total records: {len(final_df)}")
-        return final_df
-
+        connection_string = f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        engine = create_engine(connection_string)
+        return engine
     except Exception as e:
-        st.error(f"Failed to load data from MySQL. Check tables and schema. Error: {e}")
-        print(f"Failed to load data from MySQL. Check tables and schema. Error: {e}")
-        if conn:
-            conn.close()
+        print(f"Error creating SQLAlchemy engine: {e}")
+        st.error(f"Error creating SQLAlchemy engine: {e}") # Show in app
         return None
+
+# --- The rest of your baseball_data.py file remains the same ---
+# (list_tables_mysql, load_from_mysql, save_to_mysql, get_mlb_data)
+# ... (rest of file) ...
+# --- NEW: Generic function to list all tables ---
+def list_tables_mysql():
+    """Returns a list of all table names in the database."""
+    conn = create_mysql_connection()
+    if conn is None:
+        return []
+        
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SHOW TABLES")
+        tables = [table[0] for table in cursor.fetchall()]
+        return tables
+    except Error as e:
+        print(f"Error listing tables: {e}")
+        return []
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+# --- MODIFIED: Now generic, requires a table_name ---
+def load_from_mysql(table_name):
+    """Loads data from a specific table in the MySQL database."""
+    conn = create_mysql_connection()
+    if conn is None:
+        print("Could not connect to database.")
+        return pd.DataFrame()
+        
+    try:
+        # Check if table exists
+        all_tables = list_tables_mysql()
+        if table_name not in all_tables:
+            print(f"Table '{table_name}' does not exist. Returning empty DataFrame.")
+            return pd.DataFrame()
+            
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        return df
+    except Exception as e:
+        print(f"Error reading from MySQL table '{table_name}': {e}")
+        return pd.DataFrame()
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+# --- MODIFIED: Now generic, requires a df and table_name ---
+def save_to_mysql(df, table_name):
+    """Saves the DataFrame to a specific table, replacing existing data."""
+    if df.empty:
+        print(f"Dataframe is empty, nothing to save to '{table_name}'.")
+        return
+        
+    engine = create_mysql_engine()
+    if engine is None:
+        print("Could not create connection engine. Data not saved.")
+        return
+        
+    try:
+        df.to_sql(table_name, con=engine, if_exists='replace', index=False)
+        print(f"Data saved to MySQL table '{table_name}' successfully.")
+    except Exception as e:
+        print(f"Error saving data to MySQL table '{table_name}': {e}")
+
+# --- This function stays mostly the same, but calls the new generic functions ---
+def get_mlb_data(api_key, force_refresh=False):
+    """
+    Fetches MLB player data, either from cache (MySQL) or by calling the API.
+    This function specifically manages the 'mlb_players' table.
+    """
+    player_table = "mlb_players" # Define the specific table for this function
+    
+    if not force_refresh:
+        # MODIFIED: Call generic load function with specific table
+        df = load_from_mysql(player_table)
+        if not df.empty:
+            print(f"Loaded data from MySQL cache ('{player_table}').")
+            return df
+    
+    print("Fetching new data from API...")
+    # The original API fetching logic
+    base_url = "https://api.ballstatz.com/v1/mlb/stats"
+    teams_url = "https://api.ballstatz.com/v1/mlb/teams"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    
+    try:
+        teams_response = requests.get(teams_url, headers=headers)
+        teams_response.raise_for_status()
+        teams = teams_response.json().get('data', [])
+        
+        all_players_data = []
+        
+        for team in teams:
+            team_id = team.get('id')
+            team_name = team.get('name')
+            if not team_id:
+                continue
+            
+            # Fetch hitting stats
+            hitting_params = {'teamId': team_id, 'group': 'hitting'}
+            hitting_response = requests.get(base_url, headers=headers, params=hitting_params)
+            if hitting_response.status_code == 200:
+                hitting_data = hitting_response.json().get('data', [])
+                for player in hitting_data:
+                    player['team'] = team_name
+                    player['group_type'] = 'hitting'
+                all_players_data.extend(hitting_data)
+            
+            # Fetch pitching stats
+            pitching_params = {'teamId': team_id, 'group': 'pitching'}
+            pitching_response = requests.get(base_url, headers=headers, params=pitching_params)
+            if pitching_response.status_code == 200:
+                pitching_data = pitching_response.json().get('data', [])
+                for player in pitching_data:
+                    player['team'] = team_name
+                    player['group_type'] = 'pitching'
+                all_players_data.extend(pitching_data)
+        
+        if not all_players_data:
+            print("No data fetched from API.")
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(all_players_data)
+        
+        # Data cleaning
+        df.drop_duplicates(subset=['name', 'team', 'group_type'], inplace=True)
+        numeric_cols = ['avg', 'era', 'hits', 'homeRuns', 'rbi', 'strikeOuts', 'wins', 'losses', 'games', 'inningsPitched']
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        df.fillna(0, inplace=True)
+        
+        # MODIFIED: Call generic save function with specific table
+        save_to_mysql(df, player_table)
+        return df
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching data from API: {e}")
+        return pd.DataFrame()
