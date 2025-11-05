@@ -5,8 +5,8 @@ from mlb_chat import configure_gemini, get_gemini_response, extract_sql_query
 
 # --- Page Configuration ---
 st.set_page_config(page_title="MLB AI Analyst", layout="wide")
-st.title("⚾ MLB AI Analyst")
-st.subheader("Ask me anything about the Lahman Baseball Database!")
+st.title("⚾ MLB Metrics ⚾")
+st.subheader("Ask me anything about Baseball!")
 
 # --- Configure API ---
 configure_gemini()
