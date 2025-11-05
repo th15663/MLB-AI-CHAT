@@ -30,18 +30,29 @@ if st.button("Get Answer"):
     if user_query:
         with st.spinner("AI is thinking... (Step 1: Generating SQL)"):
             
-            # --- 3. First AI Call: Generate SQL ---
+            # --- THIS IS THE FIX ---
+            # We are making the SQL prompt much more specific
+            # to guide the AI correctly.
             sql_prompt = f"""
             You are an expert MySQL data analyst. Based on the database schema below,
             write a single, valid MySQL query to answer the user's question.
-            Only return the SQL query, wrapped in ```sql ... ```.
+            
+            **Key Information:**
+            - The `batting` table contains player statistics (like HR, H, AB) and is linked by `playerID` and `yearID`.
+            - The `people` table contains player names and is linked by `playerID`.
+            - To get a player's name and their stats, you MUST join `batting` and `people` ON `batting.playerID = people.playerID`.
+            - Pay close attention to the `yearID` when the question specifies a year.
+            - When asked for "most" or "leader", always order by the statistic in question (e.g., HR) in descending order (DESC) and take the top (LIMIT 1).
 
-            Schema:
+            **Schema:**
             {db_schema}
 
-            Question:
+            **Question:**
             {user_query}
+
+            Only return the SQL query, wrapped in ```sql ... ```.
             """
+            # --- END OF FIX ---
             
             sql_response = get_gemini_response(sql_prompt)
             sql_query = extract_sql_query(sql_response)
@@ -51,9 +62,7 @@ if st.button("Get Answer"):
                 st.write("AI Response:", sql_response)
                 st.stop()
                 
-            # --- SQL QUERY IS NOW HIDDEN ---
-            # st.code(sql_query, language="sql") # No longer showing this to the user
-            # --- ---
+            # st.code(sql_query, language="sql") # We'll keep this hidden
 
         with st.spinner("Running query on database... (Step 2: Getting Data)"):
             
@@ -84,7 +93,7 @@ if st.button("Get Answer"):
             """
             
             final_answer = get_gemini_response(answer_prompt)
-            st.markdown(final_answer) # This is the final, natural answer
+            st.markdown(final_answer)
             
             # Optionally show the data table
             with st.expander("View Raw Data"):
