@@ -17,24 +17,20 @@ def get_gemini_response(prompt):
     Sends a prompt to the Gemini model and returns the text response.
     """
     try:
-        # --- THIS IS THE FINAL FIX ---
-        # Using the exact model name from your debug list
+        # Use the correct model name we found
         model = genai.GenerativeModel('models/gemini-flash-latest')
-        # --- END OF FIX ---
         
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        # Updated error for better debugging
         st.error(f"Error communicating with Gemini: {e}")
-        return f"Error communicating with Gemini: {e}" # Return the error to be displayed
+        return f"Error communicating with Gemini: {e}"
 
 # --- Helper to extract SQL from AI response ---
 def extract_sql_query(text):
     """
     Extracts a SQL query from a markdown code block.
     """
-    # Check for the error message first
     if "Error communicating with Gemini" in text:
         return None
         
@@ -42,7 +38,6 @@ def extract_sql_query(text):
     if match:
         return match.group(1).strip()
     
-    # Fallback for simple query string
     match = re.search(r'SELECT\s.*?;', text, re.IGNORECASE | re.DOTALL)
     if match:
         return match.group(0).strip()
