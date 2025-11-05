@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from baseball_data import get_database_schema, run_sql_query
 from mlb_chat import configure_gemini, get_gemini_response, extract_sql_query
+import google.generativeai as genai # --- 1. ADD THIS IMPORT ---
 
 # --- Page Configuration ---
 st.set_page_config(page_title="MLB AI Analyst", layout="wide")
@@ -10,6 +11,29 @@ st.subheader("Ask me anything about Baseball!")
 
 # --- Configure API ---
 configure_gemini()
+
+# --- 2. ADD THIS TEMPORARY DEBUG CODE ---
+st.subheader("Available Gemini Models (for Debugging)")
+st.write("Looking for models that support 'generateContent'...")
+try:
+    model_list = []
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            model_list.append(m.name)
+    
+    if model_list:
+        st.write("Found these compatible models:")
+        st.code('\n'.join(model_list))
+    else:
+        st.error("Could not find any models that support 'generateContent'. This might be an API key or permissions issue.")
+
+except Exception as e:
+    st.error(f"Error listing models: {e}")
+    st.write("This likely means the 'requirements.txt' update is still needed to get a newer API library.")
+
+st.divider()
+# --- END OF TEMPORARY DEBUG CODE ---
+
 
 # --- 1. Get Database Schema ---
 with st.spinner("Loading database schema..."):
@@ -24,6 +48,7 @@ with st.expander("View Database Schema"):
     st.code(db_schema)
 
 # --- 2. Chat Interface ---
+# (The rest of your file remains the same)
 user_query = st.text_input("Your question:", placeholder="e.g., Who had the most home runs in 1998?")
 
 if st.button("Get Answer"):
