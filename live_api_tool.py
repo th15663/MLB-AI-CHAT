@@ -38,14 +38,14 @@ def get_yesterdays_scores():
     except Exception as e:
         return f"Error getting scores: {e}"
 
-# --- Tool 2: Get Player Info & Stats (IMPROVED) ---
+# --- Tool 2: Get Player Info & Stats (LEVEL 3 - Smart Fallback) ---
 def get_player_info(player_name):
     """
-    Finds a player, gets their bio, and gets their current season stats.
-    Returns a single string of context.
+    Finds a player, gets their bio, and gets their most recent
+    completed season stats (handles off-season).
     """
     try:
-        # --- 1. Find the player ID (Same as before) ---
+        # --- 1. Find the player ID ---
         search_results = statsapi.lookup_player(player_name)
         
         if not search_results:
@@ -53,51 +53,61 @@ def get_player_info(player_name):
         
         player_lookup = search_results[0]
         player_id = player_lookup['id']
-        full_name = player_lookup['fullName']
         
-        # --- 2. Get Bio & Stats (NEW, more robust method) ---
-        current_year = datetime.date.today().year # This will be 2025
-        
-        # This is a more direct and reliable way to get stats for a *specific* season
-        data = statsapi.get('people', {
-            'personIds': player_id,
-            'season': current_year,
-            'hydrate': f'stats(group=[hitting,pitching,fielding],type=season,season={current_year})'
-        })
+        # --- 2. Get Bio ---
+        # We'll get the bio first, as it's more reliable
+        bio_data = statsapi.get('person', {'personId': player_id})
+        person = bio_data['people'][0]
 
-        if not data or 'people' not in data or not data['people']:
-             return f"Error: Could not get data for player ID {player_id}."
-
-        player_data = data['people'][0]
-
-        # --- 3. Format Bio ---
         bio_summary = (
-            f"Player: {player_data.get('fullName', 'N/A')}\n"
-            f"Born: {player_data.get('birthDate', 'N/A')}\n"
-            f"Team: {player_data.get('currentTeam', {}).get('name', 'N/A')}\n"
-            f"Position: {player_data.get('primaryPosition', {}).get('name', 'N/A')}\n"
-            f"Bio: Bats {player_data.get('batSide', {}).get('code', 'N/A')}, "
-            f"Throws {player_data.get('pitchHand', {}).get('code', 'N/A')}\n"
+            f"Player: {person.get('fullName', 'N/A')}\n"
+            f"Born: {person.get('birthDate', 'N/A')}\n"
+            f"Team: {person.get('currentTeam', {}).get('name', 'N/A')}\n"
+            f"Position: {person.get('primaryPosition', {}).get('name', 'N/A')}\n"
+            f"Bio: Bats {person.get('batSide', {}).get('code', 'N/A')}, "
+            f"Throws {person.get('pitchHand', {}).get('code', 'N/A')}\n"
         )
         
-        # --- 4. Format Stats ---
-        stats_summary = f"\nNo stats found for {current_year}."
+        # --- 3. Get Stats (Smart Fallback) ---
+        current_year = datetime.date.today().year # 2025
+        stats_summary = ""
         
-        if 'stats' in player_data and player_data['stats']:
-            # Find the "season" stats
-            for stat_group in player_data['stats']:
-                if stat_group['group']['displayName'] == 'hitting' and stat_group['type']['displayName'] == 'season':
-                    if 'splits' in stat_group and stat_group['splits']:
-                        
-                        hitting_stats = stat_group['splits'][0]['stat']
-                        
-                        # THIS IS KEY: We get the season from the data itself
-                        season_label = stat_group['splits'][0].get('season', current_year)
-                        
-                        df = pd.DataFrame([hitting_stats])
-                        stats_summary = f"\n{season_label} Hitting Stats:\n{df.to_string()}\n"
-                        break # Found it, exit loop
+        # This is the function to get and format stats
+        def get_stats_for_year(year):
+            data = statsapi.get('people', {
+                'personIds': player_id,
+                'season': year,
+                'hydrate': f'stats(group=[hitting,pitching,fielding],type=season,season={year})'
+            })
+            
+            if not data or 'people' not in data or not data['people']:
+                return None # Failed to get data
+            
+            player_data = data['people'][0]
+            
+            if 'stats' in player_data and player_data['stats']:
+                for stat_group in player_data['stats']:
+                    if stat_group['group']['displayName'] == 'hitting' and stat_group['type']['displayName'] == 'season':
+                        if 'splits' in stat_group and stat_group['splits']:
+                            
+                            hitting_stats = stat_group['splits'][0]['stat']
+                            season_label = stat_group['splits'][0].get('season', year)
+                            
+                            df = pd.DataFrame([hitting_stats])
+                            return f"\n{season_label} Hitting Stats:\n{df.to_string()}\n"
+            return None # No stats found
         
+        # --- 4. The "Smart" Logic ---
+        stats_summary = get_stats_for_year(current_year) # Try 2025 first
+        
+        if stats_summary is None:
+            # If 2025 fails (it will in the off-season), try 2024
+            stats_summary = get_stats_for_year(current_year - 1) 
+        
+        if stats_summary is None:
+            # If both fail, just say so
+            stats_summary = f"\nNo recent season stats found."
+            
         # --- 5. Combine and return all context ---
         return bio_summary + stats_summary
         
