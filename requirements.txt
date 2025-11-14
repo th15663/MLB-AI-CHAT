@@ -1,6 +1,4 @@
 streamlit
 google-generativeai
 pandas
-mysql-connector-python
-SQLAlchemy
 mlb-statsapi
