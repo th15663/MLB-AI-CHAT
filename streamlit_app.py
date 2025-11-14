@@ -26,6 +26,8 @@ if st.button("Get Answer"):
         # This "brain" will only route between our LIVE API tools.
         with st.spinner("AI is analyzing your question..."):
 
+            # --- AFTER (The fix) ---
+
             router_prompt = f"""
             You are an AI router. Your job is to analyze a user's question
             and identify the correct tool and any needed entities (like player names).
@@ -34,11 +36,17 @@ if st.button("Get Answer"):
 
             The available tools are:
             - "scores": For questions about yesterday's scores.
-            - "player_info": For questions about a specific player's bio or stats.
-            - "general": For any other question.
+            - "player_info": For questions about a SINGLE player's RECENT stats (e.g., "Tell me about Shohei Ohtani").
+            - "historical_db": For complex, historical, or multi-player questions (e.g., "Who had the most home runs in 1998?", "Who were the best pitchers last year?").
+            - "general": For any other chat.
+            
+            If the tool is "player_info", the "entity" MUST be the player's full name.
+            If the tool is "historical_db", the "entity" MUST be the original user question.
+            Otherwise, "entity" can be null.
 
-            The "entity" key should be the full player name if "tool" is "player_info",
-            otherwise it should be an empty string.
+            User Question:
+            {user_query}
+            """
 
             Examples:
             User: "What were the scores yesterday?"
