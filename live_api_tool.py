@@ -1,33 +1,36 @@
 # live_api_tool.py
-import mlb_statsapi
+import statsapi  # <-- THIS IS THE CORRECT IMPORT (not 'mlb_statsapi')
 import datetime
 import streamlit as st
 import pandas as pd
 
 # --- Tool 1: Get Scores ---
-@st.cache_data(ttl=3600) # Cache for 1 hour
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_yesterdays_scores():
     """Fetches all game scores from yesterday."""
     try:
+        # Get yesterday's date in YYYY-MM-DD format
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-        schedule = mlb_statsapi.get('schedule', {'sportId': 1, 'date': yesterday})
-
-        if not schedule['dates']:
+        
+        # Use the high-level 'schedule' function
+        games = statsapi.schedule(date=yesterday)
+        
+        if not games:
             return "No games were played yesterday."
-
-        games = schedule['dates'][0]['games']
+            
         game_summaries = []
-
+        
+        # Process the game data
         for game in games:
-            if game['status']['detailedState'] != 'Final':
-                continue
-
-            home_team = game['teams']['home']['team']['name']
-            home_score = game['teams']['home']['score']
-            away_team = game['teams']['away']['team']['name']
-            away_score = game['teams']['away']['score']
+            if game['status'] != 'Final':
+                continue  # Skip games that weren't completed
+            
+            home_team = game['home_name']
+            home_score = game['home_score']
+            away_team = game['away_name']
+            away_score = game['away_score']
             winner = home_team if home_score > away_score else away_team
-
+            
             summary = (
                 f"Game: {away_team} ({away_score}) at {home_team} ({home_score}). "
                 f"Winner: {winner}."
@@ -36,7 +39,7 @@ def get_yesterdays_scores():
 
         if not game_summaries:
             return "No completed games were found for yesterday."
-        return "\n".join(game_summaries)
+        return "\n".join(game_summarIES)
     except Exception as e:
         return f"Error getting scores: {e}"
 
@@ -48,51 +51,43 @@ def get_player_info(player_name):
     """
     try:
         # --- 1. Find the player ID ---
-        search_results = mlb_statsapi.get('player', {'name': player_name})
-
-        if not search_results or 'people' not in search_results or not search_results['people']:
+        # Use the 'lookup_player' function
+        search_results = statsapi.lookup_player(player_name)
+        
+        if not search_results:
             return f"Error: Could not find any player named '{player_name}'."
-
-        player = search_results['people'][0]
+        
+        # Grab the first and most relevant match
+        player = search_results[0]
         player_id = player['id']
         full_name = player['fullName']
-
-        # --- 2. Get Player Bio (Person endpoint) ---
-        bio = mlb_statsapi.get('person', {'personId': player_id})
-        person = bio['people'][0]
-
-        bio_summary = (
-            f"Player: {person.get('fullName', 'N/A')}\n"
-            f"Born: {person.get('birthDate', 'N/A')} in {person.get('birthCity', 'N/A')}\n"
-            f"Team: {person.get('currentTeam', {}).get('name', 'N/A')}\n"
-            f"Position: {person.get('primaryPosition', {}).get('name', 'N/A')}\n"
-            f"Bio: Bats {person.get('bats', {}).get('code', 'N/A')}, "
-            f"Throws {person.get('throws', {}).get('code', 'N/A')}, "
-            f"Height {person.get('height', 'N/A')}, "
-            f"Weight {person.get('weight', 'N/A')} lbs.\n"
-        )
-
-        # --- 3. Get Season Stats (person_stats endpoint) ---
+        
+        # --- 2. Get Player Bio & Stats ---
+        # 'player_stat_data' is a great function that gets bio AND stats
         current_year = datetime.date.today().year
-        stats = mlb_statsapi.get('person_stats', {
-            'personId': player_id, 
-            'stats': ['season'], 
-            'group': 'hitting', # Check hitting first
-            'season': current_year
-        })
-
-        stats_summary = ""
-        if 'stats' in stats and stats['stats'] and 'splits' in stats['stats'][0] and stats['stats'][0]['splits']:
-            hitting_stats = stats['stats'][0]['splits'][0]['stat']
+        data = statsapi.player_stat_data(player_id, group="hitting", type="season", season=current_year)
+        
+        # --- 3. Format the data into clean text context ---
+        bio_summary = (
+            f"Player: {full_name}\n"
+            f"Born: {player.get('birthDate', 'N/A')}\n"
+            f"Team: {player.get('currentTeam', {}).get('name', 'N/A')}\n"
+            f"Position: {player.get('primaryPosition', {}).get('name', 'N/A')}\n"
+            f"Bio: Bats {player.get('bats', {}).get('code', 'N/A')}, "
+            f"Throws {player.get('throws', {}).get('code', 'N/A')}\n"
+        )
+        
+        stats_summary = f"\nNo {current_year} hitting stats found."
+        if data and 'stats' in data and data['stats']:
+            hitting_stats = data['stats'][0]['stats']
+            # Convert stats to a readable DataFrame, then to a string
             df = pd.DataFrame([hitting_stats])
-            stats_summary += f"\n{current_year} Hitting Stats:\n{df.to_string()}\n"
-        else:
-            stats_summary += f"\nNo {current_year} hitting stats found.\n"
+            stats_summary = f"\n{current_year} Hitting Stats:\n{df.to_string()}\n"
 
         # (You could add a check for pitching stats here too)
-
+        
         # --- 4. Combine and return all context ---
         return bio_summary + stats_summary
-
+        
     except Exception as e:
         return f"Error getting player info: {e}"
